@@ -6,12 +6,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  build:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+  build-windows:
+    runs-on: windows-latest
+    timeout-minutes: 60
 
     steps:
       - name: Checkout
@@ -22,34 +19,40 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
+      - name: Install pnpm
+        run: npm install -g pnpm@9
+
+      - name: Build web app (SK Editor)
+        working-directory: www
+        run: |
+          pnpm install --no-frozen-lockfile
+          pnpm build
+        env:
+          NODE_ENV: production
+
+      - name: Replace www with built files
+        shell: pwsh
+        run: |
+          $built = "www\dist\public"
+          $target = "www-built"
+          New-Item -ItemType Directory -Force -Path $target
+          Copy-Item -Recurse -Force "$built\*" "$target\"
+          Remove-Item -Recurse -Force "www"
+          Rename-Item "$target" "www"
+
+      - name: Install Electron dependencies
         run: npm install
 
-      - name: Build desktop app
-        run: npm run build
+      - name: Build Windows executable
+        run: npm run build:win
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Upload artifacts (Linux)
-        if: matrix.os == 'ubuntu-latest'
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: -workspace-sk-editor-linux
-          path: dist/*.AppImage
-          retention-days: 30
-
-      - name: Upload artifacts (Windows)
-        if: matrix.os == 'windows-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: -workspace-sk-editor-windows
-          path: dist/*.exe
-          retention-days: 30
-
-      - name: Upload artifacts (Mac)
-        if: matrix.os == 'macos-latest'
-        uses: actions/upload-artifact@v4
-        with:
-          name: -workspace-sk-editor-mac
-          path: dist/*.dmg
-          retention-days: 30
+          name: SK-Editor-v3-Windows
+          path: |
+            dist/**/*.exe
+            dist/**/*.zip
+          if-no-files-found: warn
